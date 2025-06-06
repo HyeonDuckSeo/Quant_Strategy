@@ -48,8 +48,8 @@ from alpaca.trading.enums import (
 
 
 
-api_key = 'PKBF0H4I5I40PHYQRD5W'
-secret_key = 'XTTc9v7fYrdSIKjfDlnjPFtRj2t95Hx6KIjwZXPw'
+api_key = ''
+secret_key = ''
 
 trade_api_url = None
 trade_api_wss = None
