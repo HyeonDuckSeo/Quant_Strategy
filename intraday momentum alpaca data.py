@@ -359,3 +359,103 @@ stats['Alpha (%)'] = round(model.params.const * 100 * 252, 2)
 stats['Beta'] = round(model.params['ret_spy'], 2)
 
 print(stats)
+
+
+
+
+# %%
+# real time market data
+# Compact Alpaca Stream
+import os, sys, signal, threading, time
+from collections import defaultdict
+from datetime import datetime, timezone, timedelta
+
+# 실시간 스트림
+from alpaca.data.enums import DataFeed
+from alpaca.data.live.crypto import CryptoDataStream
+from alpaca.data.live.stock import StockDataStream
+
+# 시간대 설정
+try:
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+except Exception:
+    ET = timezone.utc  # tzdata 미설치 시 UTC로 폴백(표기만 달라짐)
+
+
+
+API_KEY      = os.getenv("APCA_API_KEY_ID", "")
+API_SECRET   = os.getenv("APCA_API_SECRET_KEY", "")
+
+USE_CRYPTO       = True                # True=크립토, False=주식
+SYMBOLS_CRYPTO   = ["BTC/USD"]
+SYMBOLS_STOCK    = ["QQQ"]
+FEED             = DataFeed.IEX        # 주식 전용: IEX(무료) / SIP(유료)
+
+
+
+# -------------------------------------------------------------
+# UTC & ET 동시 문자열
+# -------------------------------------------------------------
+def utc_et_str(ts: datetime) -> str:
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    u = ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    e = ts.astimezone(ET).strftime("%Y-%m-%d %H:%M:%S")
+    label = "ET" if ET is not timezone.utc else "UTC"
+    return f"{u} UTC | {e} {label}"
+
+# -------------------------------------------------------------
+# 콜백: 1분봉 수신 시 호출 (크립토/주식 공통 형식)
+# -------------------------------------------------------------
+async def on_bar(bar):
+    ts = getattr(bar, "timestamp", None) or getattr(bar, "t", None)
+    if isinstance(ts, datetime):
+        ts_str = utc_et_str(ts)
+    else:
+        ts_str = str(ts)
+
+    vwap = getattr(bar, "vwap", None) or getattr(bar, "vw", None)
+    vol  = getattr(bar, "volume", None) or getattr(bar, "v", None)
+    vwap_s = f"{vwap:.6f}" if isinstance(vwap, (int, float)) else "-"
+    vol_s  = f"{vol:.6f}"  if isinstance(vol,  (int, float)) else "-"
+
+    print(
+        f"[{ts_str}] {bar.symbol} "
+        f"O:{bar.open:.2f} H:{bar.high:.2f} L:{bar.low:.2f} C:{bar.close:.2f} "
+        f"V:{vol_s} VWAP:{vwap_s}",
+        flush=True
+    )
+
+# -------------------------------------------------------------
+# 실행
+# -------------------------------------------------------------
+def main():
+    if not API_KEY or not API_SECRET or "YOUR_" in API_KEY or "YOUR_" in API_SECRET:
+        print("환경변수 APCA_API_KEY_ID / APCA_API_SECRET_KEY 를 설정하세요.")
+        sys.exit(1)
+
+    if USE_CRYPTO:
+        stream = CryptoDataStream(API_KEY, API_SECRET)
+        symbols = SYMBOLS_CRYPTO
+        print(f"Starting CRYPTO 1-minute bars: {', '.join(symbols)}", flush=True)
+    else:
+        stream = StockDataStream(API_KEY, API_SECRET, feed=FEED)
+        symbols = SYMBOLS_STOCK
+        print(f"Starting STOCK 1-minute bars (feed={FEED.name}): {', '.join(symbols)}", flush=True)
+
+    stream.subscribe_bars(on_bar, *symbols)
+
+    def shutdown(*_): # 종료(CTRL+C) 처리
+        try:
+            stream.stop()
+        finally:
+            sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    stream.run()
+
+if __name__ == "__main__":
+    main()
