@@ -344,3 +344,93 @@ stats['Alpha (%)'] = round(model.params.const * 100 * 252, 2)
 stats['Beta'] = round(model.params['ret_spy'], 2)
 
 print(stats)
+
+
+# %%
+import requests
+import re
+import pandas as pd
+from tqdm import tqdm
+from bs4 import BeautifulSoup
+
+
+
+def remove_newline_tab(text):
+    return re.sub(r'[\n\t]', '', text).strip()
+
+entire_data_sets = pd.DataFrame()
+
+for page in tqdm(range(1, 30), desc="페이지 크롤링 진행중"):
+    
+        
+    dates = []
+    notices = []
+    urls = []
+
+    url = f"https://www.kofia.or.kr/brd/m_96/list.do?page={page}"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    # 공지사항 (신규 + 기존 모두)
+    notice_new = soup.find_all('td', class_='left new')
+    notice_old = soup.find_all('td', class_='left')
+    
+    # 중복 제거: 기존 공지 중 'new' 아닌 것만 필터링
+    notice = [nt for nt in notice_old if 'new' not in nt.get('class', [])] + notice_new
+    
+    for nt in notice:
+        notices.append(remove_newline_tab(nt.text))
+        href = nt.find('a')['href']
+        urls.append('https://www.kofia.or.kr/brd/m_96' + href[1:])  # 제거된 '/' 처리
+
+    # 날짜 추출
+    td_elements = soup.find_all('td', class_='num')
+    for td in td_elements:
+        text = td.text.strip()
+        if text.count('-') == 2:
+            dates.append(text)
+    
+    # 데이터프레임 생성
+    data_sets = pd.DataFrame({
+        'dates': dates,
+        'notices': notices,
+        'urls': urls
+    })
+    
+    entire_data_sets = pd.concat([entire_data_sets, data_sets], axis=0)
+    
+    break
+    
+    
+    
+keywords = ['퀀트', '알고리즘', '헤지', '멀티에셋', '트레이딩', '글로벌운용', '액티브', 'ETF운용']
+
+filtered_df = entire_data_sets[entire_data_sets['notices'].apply(lambda x: any(kw in x for kw in keywords))].reset_index(drop=True)
+
+
+
+import requests
+
+def send_message(token, chat_id, text):
+    url = f'https://api.telegram.org/bot{token}/sendMessage'
+    payload = {'chat_id': chat_id, 'text': text}
+    response = requests.post(url, data=payload)
+    print("Status Code:", response.status_code)
+    print("Response Text:", response.text)  # 오류 메시지 확인
+    return response
+
+
+
+token = 
+chat_id = 
+
+
+
+lines = []
+for i, row in filtered_df.iterrows():
+    line = f"{i+1}. 📅 {row['dates']} | 📝 {row['notices']}\n🔗 {row['urls']}\n"
+    lines.append(line)
+
+message = "📢 [채용공고]\n\n" + "\n".join(lines[:5])  # 상위 5개만 예시로
+send_message(token, chat_id, message)
+
